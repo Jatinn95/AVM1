@@ -1,4 +1,4 @@
-name: Build Android VM to WebAssembly
+name: Build QEMU i386.js and i386.wasm
 
 on:
   push:
@@ -9,37 +9,88 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
+
+    - name: Set up Emscripten
+      uses: mymindstorm/setup-emsdk@v13
+      with:
+        version: '3.1.45'
 
     - name: Install dependencies
       run: |
-        sudo apt update
-        sudo apt install -y build-essential cmake ninja-build python3-pip curl qemu
-        pip3 install --upgrade cmake
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          git \
+          python3 \
+          python3-pip \
+          ninja-build \
+          pkg-config \
+          libglib2.0-dev \
+          libpixman-1-dev \
+          cmake \
+          automake \
+          libtool
 
-    - name: Set up Emscripten
+    - name: Clone QEMU repository
       run: |
-        git clone https://github.com/emscripten-core/emsdk.git
-        cd emsdk
-        ./emsdk install latest
-        ./emsdk activate latest
-        echo "source $(pwd)/emsdk_env.sh" >> $GITHUB_ENV
+        git clone --depth 1 --branch v9.0.0 https://github.com/qemu/qemu.git qemu-src
+        cd qemu-src
+        git submodule init
+        git submodule update --recursive
 
-    - name: Build .wasm and .js
+    - name: Build QEMU with Emscripten
       run: |
-        source emsdk/emsdk_env.sh
-        mkdir -p build
-        cd build
-        # Replace the line below with your actual source files and flags
-        emcc ../src/main.c -O2 -s WASM=1 -s EXPORTED_FUNCTIONS='["_main"]' -o android-vm.js
+        # Activate Emscripten environment
+        source $EMSDK/emsdk_env.sh
+        
+        # Set environment variables
+        export CC=emcc
+        export CXX=em++
+        export AR=emar
+        export RANLIB=emranlib
+        export CFLAGS="-O2 -s WASM=1 -s FORCE_FILESYSTEM=1 -s ALLOW_MEMORY_GROWTH=1 -s ASSERTIONS=1 -s STANDALONE_WASM=0"
+        export LDFLAGS="-O2 -s WASM=1 -s FORCE_FILESYSTEM=1 -s ALLOW_MEMORY_GROWTH=1 -s EXPORTED_RUNTIME_METHODS=['FS','callMain'] -s ERROR_ON_UNDEFINED_SYMBOLS=0"
+
+        # Verify emcc is available
+        which emcc || { echo "emcc not found"; exit 1; }
+        emcc --version || { echo "emcc not working"; exit 1; }
+        echo "PATH is: $PATH"
+
+        # Configure QEMU
+        cd qemu-src
+        ./configure \
+          --target-list=i386-softmmu \
+          --disable-docs \
+          --disable-system \
+          --disable-user \
+          --disable-tools \
+          --disable-guest-agent \
+          --disable-werror \
+          --enable-debug \
+          --cc="emcc" \
+          --cxx="em++" \
+          --host-cc="emcc" \
+          --objcc="emcc" \
+          --extra-cflags="$CFLAGS" \
+          --extra-ldflags="$LDFLAGS" \
+          --disable-sdl \
+          --disable-vnc
+
+        # Build QEMU
+        make -j$(nproc)
+
+    - name: Package artifacts
+      run: |
+        mkdir -p artifacts
+        cp qemu-src/build/qemu-system-i386* artifacts/
+        mv artifacts/qemu-system-i386 artifacts/i386.js
+        mv artifacts/qemu-system-i386.wasm artifacts/i386.wasm
 
     - name: Upload artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
-        name: android-vm-wasm-output
-        path: |
-          build/android-vm.js
-          build/android-vm.wasm
+        name: qemu-i386-build
+        path: artifacts/
