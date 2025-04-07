@@ -1,97 +1,66 @@
-name: Build QEMU i386.js and i386.wasm
+name: Build Android-Compatible QEMU WASM
 
-on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+on: [push, pull_request]
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04 # Older OS for better compatibility
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+    - name: Checkout
+      uses: actions/checkout@v3
 
-    - name: Set up Emscripten
-      uses: mymindstorm/setup-emsdk@v13
+    - name: Setup Emscripten
+      uses: mymindstorm/setup-emsdk@v11
       with:
-        version: '3.1.45'
+        version: '2.0.34' # Older but more stable for QEMU
 
     - name: Install dependencies
       run: |
-        sudo apt-get update
         sudo apt-get install -y \
-          build-essential \
-          git \
-          python3 \
-          python3-pip \
-          ninja-build \
-          pkg-config \
-          libglib2.0-dev \
-          libpixman-1-dev \
-          cmake \
-          automake \
-          libtool
+          build-essential git python3 \
+          libglib2.0-dev libpixman-1-dev \
+          ninja-build cmake
 
-    - name: Clone QEMU repository
+    - name: Clone QEMU
       run: |
-        git clone --depth 1 --branch v9.0.0 https://github.com/qemu/qemu.git qemu-src
+        git clone --depth 1 --branch v5.2.0 \
+          https://github.com/qemu/qemu.git qemu-src
         cd qemu-src
-        git submodule init
-        git submodule update --recursive
+        git submodule update --init
 
-    - name: Build QEMU with Emscripten
+    - name: Configure
       run: |
-        # Activate Emscripten environment
         source $EMSDK/emsdk_env.sh
-        
-        # Set environment variables
-        export CC=emcc
-        export CXX=em++
-        export AR=emar
-        export RANLIB=emranlib
-        export CFLAGS="-O2 -s WASM=1 -s FORCE_FILESYSTEM=1 -s ALLOW_MEMORY_GROWTH=1 -s ASSERTIONS=1 -s STANDALONE_WASM=0"
-        export LDFLAGS="-O2 -s WASM=1 -s FORCE_FILESYSTEM=1 -s ALLOW_MEMORY_GROWTH=1 -s EXPORTED_RUNTIME_METHODS=['FS','callMain'] -s ERROR_ON_UNDEFINED_SYMBOLS=0"
-
-        # Verify emcc is available
-        which emcc || { echo "emcc not found"; exit 1; }
-        emcc --version || { echo "emcc not working"; exit 1; }
-        echo "PATH is: $PATH"
-
-        # Configure QEMU
         cd qemu-src
-        ./configure \
-          --target-list=i386-softmmu \
-          --disable-docs \
-          --disable-system \
-          --disable-user \
-          --disable-tools \
-          --disable-guest-agent \
-          --disable-werror \
+        mkdir build && cd build
+        ../configure \
+          --target-list=arm-softmmu,i386-softmmu \
+          --disable-system --disable-user \
+          --disable-tools --disable-guest-agent \
           --enable-debug \
-          --cc="emcc" \
-          --cxx="em++" \
-          --host-cc="emcc" \
-          --objcc="emcc" \
-          --extra-cflags="$CFLAGS" \
-          --extra-ldflags="$LDFLAGS" \
-          --disable-stack-protect \
-          --disable-sdl \
-          --disable-vnc
+          --cc=emcc --cxx=em++ \
+          --ar=emar --objcc=emcc \
+          --extra-cflags="-s WASM=1 -s ASYNCIFY" \
+          --extra-ldflags="-s WASM=1 -s ASYNCIFY"
 
-        # Build QEMU
-        make -j$(nproc)
-
-    - name: Package artifacts
+    - name: Build
       run: |
-        mkdir -p artifacts
-        cp qemu-src/build/qemu-system-i386* artifacts/
-        mv artifacts/qemu-system-i386 artifacts/i386.js
-        mv artifacts/qemu-system-i386.wasm artifacts/i386.wasm
+        cd qemu-src/build
+        make -j4 # Reduced parallelism for stability
 
-    - name: Upload artifacts
-      uses: actions/upload-artifact@v4
+    - name: Package
+      run: |
+        mkdir artifacts
+        cp qemu-src/build/qemu-system-{arm,i386}* artifacts/
+        for arch in arm i386; do
+          [ -f "artifacts/qemu-system-$arch" ] && 
+            mv "artifacts/qemu-system-$arch" "artifacts/$arch.js"
+          [ -f "artifacts/qemu-system-$arch.wasm" ] && 
+            mv "artifacts/qemu-system-$arch.wasm" "artifacts/$arch.wasm"
+        done
+
+    - name: Upload
+      uses: actions/upload-artifact@v3
       with:
-        name: qemu-i386-build
+        name: qemu-android-vm
         path: artifacts/
