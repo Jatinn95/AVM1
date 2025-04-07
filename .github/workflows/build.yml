@@ -31,7 +31,7 @@ jobs:
           -s ALLOW_MEMORY_GROWTH=1
 
     - name: Upload artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: i360-build
         path: dist/
