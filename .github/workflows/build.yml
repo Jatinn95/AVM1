@@ -13,6 +13,11 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
+    - name: Set up Emscripten
+      uses: mymindstorm/setup-emsdk@v13
+      with:
+        version: 'latest'
+
     - name: Install dependencies
       run: |
         sudo apt-get update
@@ -26,21 +31,23 @@ jobs:
           libglib2.0-dev \
           libpixman-1-dev \
           cmake \
-          emscripten
+          automake \
+          libtool
 
     - name: Clone QEMU repository
       run: |
-        git clone https://git.qemu.org/git/qemu.git qemu-src
+        git clone https://github.com/qemu/qemu.git qemu-src
         cd qemu-src
         git submodule init
         git submodule update --recursive
 
     - name: Configure and build QEMU for i386
       run: |
+        source $EMSDK/emsdk_env.sh
         cd qemu-src
         mkdir build
         cd build
-        emconfigure ../configure \
+        ../configure \
           --target-list=i386-softmmu \
           --disable-docs \
           --disable-system \
@@ -48,13 +55,25 @@ jobs:
           --disable-tools \
           --disable-guest-agent \
           --disable-werror \
-          --enable-debug
-        emmake make -j$(nproc)
+          --enable-debug \
+          --cross-prefix=emscripten- \
+          --host-cc=emcc \
+          --cc=emcc \
+          --cxx=em++ \
+          --objcc=emcc \
+          --ar=emar \
+          --nm=emnm \
+          --as=emcc \
+          --ranlib=emranlib \
+          --ld=emcc \
+          --extra-cflags="-s WASM=1" \
+          --extra-ldflags="-s WASM=1 -s FORCE_FILESYSTEM=1 -s ALLOW_MEMORY_GROWTH=1"
+        make -j$(nproc)
 
     - name: Copy artifacts
       run: |
         mkdir -p artifacts
-        cp qemu-src/build/qemu-system-i386.js artifacts/i386.js
+        cp qemu-src/build/qemu-system-i386 artifacts/i386.js
         cp qemu-src/build/qemu-system-i386.wasm artifacts/i386.wasm
 
     - name: Upload artifacts
