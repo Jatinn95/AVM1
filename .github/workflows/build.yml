@@ -5,7 +5,7 @@ on: [push, pull_request]
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 90
+    timeout-minutes: 120  # Extended timeout for complex build
 
     steps:
     - name: Checkout repository
@@ -26,53 +26,54 @@ jobs:
           autoconf automake libtool \
           pkg-config gettext
 
-    - name: Clone QEMU (minimal)
+    - name: Clone QEMU with minimal submodules
       run: |
-        git clone --depth 1 --branch v5.2.0 \
+        git clone --depth 1 --branch v6.2.0 \
           https://github.com/qemu/qemu.git qemu-src
         cd qemu-src
-        git submodule update --init --depth 1 dtc
+        git submodule update --init --depth 1 \
+          dtc ui/keycodemapdb
 
     - name: Configure environment
       run: |
         source $EMSDK/emsdk_env.sh
-        export CC="emcc -s WASM=1"
-        export CXX="em++ -s WASM=1"
-        export AR=emar
-        export RANLIB=emranlib
-        export CFLAGS="-O2 -s ASYNCIFY -s ALLOW_MEMORY_GROWTH=1"
-        export LDFLAGS="-s WASM=1 -s FORCE_FILESYSTEM=1"
+        export CC="emcc"
+        export CXX="em++"
+        export AR="emar"
+        export RANLIB="emranlib"
+        export CFLAGS="-O2 -s WASM=1 -s ASYNCIFY -s ALLOW_MEMORY_GROWTH=1 -s FORCE_FILESYSTEM=1"
+        export LDFLAGS="$CFLAGS -s EXPORTED_RUNTIME_METHODS=['FS','callMain']"
 
     - name: Configure minimal QEMU
       run: |
         cd qemu-src
         mkdir build && cd build
         ../configure \
-          --target-list= \
           --disable-system \
           --disable-user \
           --disable-tools \
           --disable-docs \
           --disable-guest-agent \
           --disable-werror \
+          --target-list= \
           --extra-cflags="$CFLAGS" \
           --extra-ldflags="$LDFLAGS"
 
-    - name: Build core components
+    - name: Build core libraries
       run: |
         cd qemu-src/build
-        make -j2 qemu-common
+        make -j2 libqemuutil.a libqemustub.a
 
     - name: Create custom WASM build
       run: |
         cd qemu-src/build
         emcc -o qemu-wasm.js \
-          *.o -lglib-2.0 -lpixman-1 \
+          libqemuutil.a libqemustub.a \
+          -lglib-2.0 -lpixman-1 \
           $LDFLAGS \
-          -s EXPORTED_RUNTIME_METHODS='["FS","callMain"]' \
           -s EXPORTED_FUNCTIONS='["_main"]' \
           -s MODULARIZE=1 \
-          -s ALLOW_MEMORY_GROWTH=1
+          -s ASYNCIFY
 
     - name: Package artifacts
       run: |
