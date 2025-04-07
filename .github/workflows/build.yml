@@ -17,7 +17,7 @@ jobs:
     - name: List repository files (debugging step)
       run: |
         echo "Listing files in repository:"
-        ls -R
+        ls -R  # This will print the directory structure
 
     - name: Install dependencies
       run: |
@@ -38,7 +38,7 @@ jobs:
         source emsdk/emsdk_env.sh
         mkdir -p build
         cd build
-        # Check that main.c is in the expected path, then adjust if needed
+        # Adjust the path to match the actual location of your C source file
         emcc ../src/main.c -O2 -s WASM=1 -s EXPORTED_FUNCTIONS='["_main"]' -o android-vm.js
 
     - name: Upload artifacts
