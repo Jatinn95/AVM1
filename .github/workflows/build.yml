@@ -1,4 +1,4 @@
-name: Build QEMU arm.js and arm.wasm for Android VM
+name: Build Android VM to WebAssembly
 
 on:
   push:
@@ -9,110 +9,42 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v3
 
-    - name: Set up Emscripten
-      uses: mymindstorm/setup-emsdk@v13
-      with:
-        version: '3.1.45'
+    - name: List repository files (debugging step)
+      run: |
+        echo "Listing files in repository:"
+        ls -R
 
     - name: Install dependencies
       run: |
-        sudo apt-get update
-        sudo apt-get install -y \
-          build-essential \
-          git \
-          python3 \
-          python3-pip \
-          ninja-build \
-          pkg-config \
-          libglib2.0-dev \
-          libpixman-1-dev \
-          cmake \
-          automake \
-          libtool
-        # Install Meson
-        pip3 install meson==0.63.0
+        sudo apt update
+        sudo apt install -y build-essential cmake ninja-build python3-pip curl \
+                            qemu-system-x86 qemu-utils
+        pip3 install --upgrade cmake
 
-    - name: Clone QEMU repository
+    - name: Set up Emscripten
       run: |
-        git clone --depth 1 --branch v7.2.0 https://github.com/qemu/qemu.git qemu-src
-        cd qemu-src
-        git submodule init
-        git submodule update --recursive
+        git clone https://github.com/emscripten-core/emsdk.git
+        cd emsdk
+        ./emsdk install latest
+        ./emsdk activate latest
 
-    - name: Build QEMU with Emscripten
+    - name: Build .wasm and .js
       run: |
-        # Activate Emscripten environment
-        source $EMSDK/emsdk_env.sh
-        
-        # Set environment variables
-        export CC=emcc
-        export CXX=em++
-        export AR=emar
-        export RANLIB=emranlib
-        export CFLAGS="-O2 -s WASM=1 -s FORCE_FILESYSTEM=1 -s ALLOW_MEMORY_GROWTH=1 -s ASSERTIONS=1 -s STANDALONE_WASM=0"
-        export LDFLAGS="-O2 -s WASM=1 -s FORCE_FILESYSTEM=1 -s ALLOW_MEMORY_GROWTH=1 -s EXPORTED_RUNTIME_METHODS=['FS','callMain'] -s ERROR_ON_UNDEFINED_SYMBOLS=0"
-
-        # Verify emcc and meson are available
-        which emcc || { echo "emcc not found"; exit 1; }
-        emcc --version || { echo "emcc not working"; exit 1; }
-        which meson || { echo "meson not found"; exit 1; }
-        meson --version || { echo "meson not working"; exit 1; }
-        echo "PATH is: $PATH"
-
-        # Create Meson cross-file for Emscripten
-        cat << EOF > emscripten.cross
-        [host_machine]
-        system = 'unknown'
-        cpu_family = 'unknown'
-        cpu = 'unknown'
-        endian = 'little'
-
-        [binaries]
-        c = '$CC'
-        cpp = '$CXX'
-        ar = '$AR'
-        ranlib = '$RANLIB'
-
-        [properties]
-        needs_exe_wrapper = true
-        EOF
-
-        # Configure QEMU with Meson
-        cd qemu-src
-        meson setup build \
-          --cross-file ../emscripten.cross \
-          --buildtype debug \
-          -Dtargets=['arm-softmmu'] \
-          -Ddocs=false \
-          -Dsystem=false \
-          -Duser=false \
-          -Dtools=false \
-          -Dguest-agent=false \
-          -Dwerror=false \
-          -Ddebug=true \
-          -Dsdl=false \
-          -Dvnc=false \
-          -Dc_args="$CFLAGS" \
-          -Dcpp_args="$CFLAGS" \
-          -Dc_link_args="$LDFLAGS" \
-          -Dcpp_link_args="$LDFLAGS"
-
-        # Build QEMU
-        ninja -C build qemu-system-arm
-
-    - name: Package artifacts
-      run: |
-        mkdir -p artifacts
-        cp qemu-src/build/qemu-system-arm* artifacts/
-        mv artifacts/qemu-system-arm artifacts/arm.js
-        mv artifacts/qemu-system-arm.wasm artifacts/arm.wasm
+        source emsdk/emsdk_env.sh
+        mkdir -p build
+        cd build
+        # Check that main.c is in the expected path, then adjust if needed
+        emcc ../src/main.c -O2 -s WASM=1 -s EXPORTED_FUNCTIONS='["_main"]' -o android-vm.js
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: qemu-arm-build
-        path: artifacts/
+        name: android-vm-wasm-output
+        path: |
+          build/android-vm.js
+          build/android-vm.wasm
