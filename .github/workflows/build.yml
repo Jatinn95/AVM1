@@ -1,0 +1,37 @@
+name: Build i360
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Install Emscripten
+      uses: mymindstorm/setup-emsdk@v14
+      with:
+        version: 3.1.45  # adjust to your Emscripten version
+
+    - name: Build i360.js and i360.wasm
+      run: |
+        emcc src/i360.cpp -o dist/i360.js \
+          -O3 \
+          -s WASM=1 \
+          -s MODULARIZE=1 \
+          -s EXPORT_NAME='createModule' \
+          -s ENVIRONMENT='web' \
+          -s ALLOW_MEMORY_GROWTH=1
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: i360-build
+        path: dist/
