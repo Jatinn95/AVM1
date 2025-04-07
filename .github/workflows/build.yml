@@ -16,7 +16,7 @@ jobs:
     - name: Set up Emscripten
       uses: mymindstorm/setup-emsdk@v13
       with:
-        version: '3.1.45'  # Using a known stable version
+        version: '3.1.45'
 
     - name: Install dependencies
       run: |
@@ -36,7 +36,7 @@ jobs:
 
     - name: Clone QEMU repository
       run: |
-        git clone --depth 1 --branch v8.0.4 https://github.com/qemu/qemu.git qemu-src
+        git clone --depth 1 --branch v7.2.0 https://github.com/qemu/qemu.git qemu-src
         cd qemu-src
         git submodule init
         git submodule update --recursive
@@ -44,20 +44,17 @@ jobs:
     - name: Configure environment
       run: |
         source $EMSDK/emsdk_env.sh
-        export AR=emar
         export CC=emcc
         export CXX=em++
-        export NM=emnm
+        export AR=emar
         export RANLIB=emranlib
-        export CFLAGS="-s WASM=1 -s FORCE_FILESYSTEM=1 -s ALLOW_MEMORY_GROWTH=1"
-        export LDFLAGS="-s WASM=1 -s FORCE_FILESYSTEM=1 -s ALLOW_MEMORY_GROWTH=1"
+        export CFLAGS="-O2 -s WASM=1 -s FORCE_FILESYSTEM=1 -s ALLOW_MEMORY_GROWTH=1 -s ASSERTIONS=1"
+        export LDFLAGS="-O2 -s WASM=1 -s FORCE_FILESYSTEM=1 -s ALLOW_MEMORY_GROWTH=1 -s EXPORTED_RUNTIME_METHODS=['FS','callMain']"
 
-    - name: Configure and build QEMU
+    - name: Configure QEMU
       run: |
         cd qemu-src
-        mkdir build
-        cd build
-        ../configure \
+        ./configure \
           --target-list=i386-softmmu \
           --disable-docs \
           --disable-system \
@@ -67,18 +64,27 @@ jobs:
           --disable-werror \
           --enable-debug \
           --cross-prefix=emscripten- \
-          --host-cc=emcc
+          --host-cc="emcc" \
+          --cc="emcc" \
+          --cxx="em++" \
+          --objcc="emcc" \
+          --extra-cflags="$CFLAGS" \
+          --extra-ldflags="$LDFLAGS" \
+          --cpu=wasm32 \
+          --host-cpu=wasm32
+
+    - name: Build QEMU
+      run: |
+        cd qemu-src
         make -j$(nproc)
 
-    - name: Rename and package artifacts
+    - name: Package artifacts
       run: |
         mkdir -p artifacts
-        cp qemu-src/build/qemu-system-i386 artifacts/i386.js
-        cp qemu-src/build/qemu-system-i386.wasm artifacts/i386.wasm
-        # Ensure the JS loader is properly named
-        if [ ! -f artifacts/i386.js ]; then
-          cp qemu-src/build/qemu-system-i386 artifacts/i386.js
-        fi
+        cp qemu-src/build/qemu-system-i386* artifacts/
+        # Rename outputs to expected names
+        mv artifacts/qemu-system-i386 artifacts/i386.js
+        mv artifacts/qemu-system-i386.wasm artifacts/i386.wasm
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
