@@ -1,4 +1,4 @@
-name: Build QEMU for Android WASM
+name: Build QEMU WASM for Android
 
 on: [push, pull_request]
 
@@ -26,9 +26,9 @@ jobs:
           nettle-dev libgnutls28-dev \
           pkg-config gettext
 
-    - name: Clone QEMU (with limited submodules)
+    - name: Clone QEMU (with minimal submodules)
       run: |
-        git clone --depth 1 --branch v7.2.0 \
+        git clone --depth 1 --branch v5.2.0 \
           https://github.com/qemu/qemu.git qemu-src
         cd qemu-src
         git submodule update --init --depth 1 \
@@ -44,12 +44,12 @@ jobs:
         export CFLAGS="-O2 -s WASM=1 -s ASYNCIFY -s ALLOW_MEMORY_GROWTH=1"
         export LDFLAGS="$CFLAGS -s EXPORTED_RUNTIME_METHODS=['FS','callMain']"
 
-    - name: Configure QEMU for i386 (supported target)
+    - name: Configure with minimal target
       run: |
         cd qemu-src
         mkdir build && cd build
         ../configure \
-          --target-list=i386-softmmu \
+          --target-list=wasm32-softmmu \
           --disable-docs \
           --disable-system \
           --disable-user \
@@ -59,20 +59,18 @@ jobs:
           --enable-debug \
           --disable-opengl \
           --disable-virglrenderer \
-          --disable-gtk \
-          --disable-sdl \
-          --disable-vnc \
-          --disable-slirp
+          --cpu=wasm32 \
+          --host-cpu=wasm32
 
     - name: Build QEMU
       run: |
         cd qemu-src/build
-        make -j$(($(nproc)/2))
+        make -j2  # Reduced parallelism for stability
 
     - name: Post-process for WASM
       run: |
         cd qemu-src/build
-        emcc -o qemu-system-i386.js \
+        emcc -o qemu-wasm.js \
           *.o -lglib-2.0 -lpixman-1 -lnettle \
           $LDFLAGS \
           -s EXPORTED_FUNCTIONS='["_main"]'
@@ -80,13 +78,13 @@ jobs:
     - name: Package artifacts
       run: |
         mkdir -p artifacts
-        cp qemu-src/build/qemu-system-i386.js artifacts/vm.js
-        cp qemu-src/build/qemu-system-i386.wasm artifacts/vm.wasm
+        cp qemu-src/build/qemu-wasm.js artifacts/
+        cp qemu-src/build/qemu-wasm.wasm artifacts/
         echo '<!DOCTYPE html>
-        <script src="vm.js"></script>
+        <script src="qemu-wasm.js"></script>
         <script>
         Module = {
-          onRuntimeInitialized: () => console.log("VM ready")
+          onRuntimeInitialized: () => console.log("QEMU WASM ready")
         };
         </script>' > artifacts/loader.html
 
