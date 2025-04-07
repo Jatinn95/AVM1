@@ -1,4 +1,4 @@
-name: Build i360
+name: Build QEMU to WebAssembly
 
 on:
   push:
@@ -15,21 +15,29 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v3
 
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y python3-pip ninja-build cmake build-essential pkg-config
+
     - name: Install Emscripten
       uses: mymindstorm/setup-emsdk@v14
       with:
-        version: 3.1.45  # adjust to your Emscripten version
+        version: 3.1.45
 
-    - name: Build i360.js and i360.wasm
+    - name: Clone QEMU (WebAssembly fork: v86)
       run: |
-        mkdir -p dist
-        emcc src/i360.cpp -o dist/i360.js \
-          -O3 \
-          -s WASM=1 \
-          -s MODULARIZE=1 \
-          -s EXPORT_NAME='createModule' \
-          -s ENVIRONMENT='web' \
-          -s ALLOW_MEMORY_GROWTH=1
+        git clone https://github.com/copy/v86.git
+        cd v86
+        git submodule update --init --recursive
+
+    - name: Build QEMU to WebAssembly
+      run: |
+        cd v86
+        make all
+        mkdir -p ../dist
+        cp v86.js v86.wasm ../dist/i360.js
+        cp v86.wasm ../dist/i360.wasm
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
