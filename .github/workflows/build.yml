@@ -1,46 +1,56 @@
-name: Build QEMU to WebAssembly
+name: Build QEMU i386.js and i386.wasm
 
 on:
   push:
     branches: [ main ]
   pull_request:
     branches: [ main ]
-  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y python3-pip ninja-build cmake build-essential pkg-config
+        sudo apt-get install -y \
+          build-essential \
+          git \
+          python3 \
+          python3-pip \
+          ninja-build \
+          pkg-config \
+          libglib2.0-dev \
+          libpixman-1-dev \
+          cmake \
+          emscripten
 
-    - name: Install Emscripten
-      uses: mymindstorm/setup-emsdk@v14
-      with:
-        version: 3.1.45
-
-    - name: Clone QEMU (WebAssembly fork: v86)
+    - name: Configure and build QEMU for i386
       run: |
-        git clone https://github.com/copy/v86.git
-        cd v86
-        git submodule update --init --recursive
+        mkdir build
+        cd build
+        emconfigure ../configure \
+          --target-list=i386-softmmu \
+          --disable-docs \
+          --disable-system \
+          --disable-user \
+          --disable-tools \
+          --disable-guest-agent \
+          --disable-werror \
+          --enable-debug
+        emmake make -j$(nproc)
 
-    - name: Build QEMU to WebAssembly
+    - name: Copy artifacts
       run: |
-        cd v86
-        make all
-        mkdir -p ../dist
-        cp v86.js ../dist/i360.js
-        cp v86.wasm ../dist/i360.wasm
+        mkdir -p artifacts
+        cp build/qemu-system-i386.js artifacts/i386.js
+        cp build/qemu-system-i386.wasm artifacts/i386.wasm
 
     - name: Upload artifacts
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v3
       with:
-        name: i360-build
-        path: dist/
+        name: qemu-i386-build
+        path: artifacts/
