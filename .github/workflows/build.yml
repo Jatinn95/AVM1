@@ -42,9 +42,6 @@ jobs:
         export RANLIB="emranlib"
         export CFLAGS="-O2 -s WASM=1 -s ASYNCIFY -s ALLOW_MEMORY_GROWTH=1"
         export LDFLAGS="$CFLAGS -s FORCE_FILESYSTEM=1"
-
-    - name: Build minimal components
-      run: |
         cd qemu-src
         mkdir build && cd build
         ../configure \
@@ -54,10 +51,11 @@ jobs:
           --disable-docs \
           --disable-guest-agent \
           --disable-werror \
-          --target-list= \
-          --without-default-features
-        
-        # Build only essential components
+          --target-list=
+
+    - name: Build minimal components
+      run: |
+        cd qemu-src/build
         make -j2 qemu-img.o util/ osdep/ qom/ hw/core/
 
     - name: Create WASM bundle
