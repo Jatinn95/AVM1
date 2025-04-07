@@ -9,7 +9,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
@@ -17,7 +16,7 @@ jobs:
     - name: Set up Emscripten
       uses: mymindstorm/setup-emsdk@v13
       with:
-        version: '3.1.39' # Change to a valid version
+        version: '3.1.45'
 
     - name: Install dependencies
       run: |
@@ -35,30 +34,32 @@ jobs:
           automake \
           libtool
 
-    - name: Verify Emscripten installation
-      run: |
-        source $EMSDK/emsdk_env.sh
-        emcc --version
-
     - name: Clone QEMU repository
       run: |
-        git clone --depth 1 --branch v7.2.0 https://github.com/qemu/qemu.git qemu-src
+        git clone --depth 1 --branch v9.0.0 https://github.com/qemu/qemu.git qemu-src
         cd qemu-src
         git submodule init
         git submodule update --recursive
 
-    - name: Configure environment
+    - name: Build QEMU with Emscripten
       run: |
+        # Activate Emscripten environment
         source $EMSDK/emsdk_env.sh
+        
+        # Set environment variables
         export CC=emcc
         export CXX=em++
         export AR=emar
         export RANLIB=emranlib
-        export CFLAGS="-O2 -s WASM=1 -s FORCE_FILESYSTEM=1 -s ALLOW_MEMORY_GROWTH=1 -s ASSERTIONS=1"
-        export LDFLAGS="-O2 -s WASM=1 -s FORCE_FILESYSTEM=1 -s ALLOW_MEMORY_GROWTH=1 -s EXPORTED_RUNTIME_METHODS=['FS','callMain']"
+        export CFLAGS="-O2 -s WASM=1 -s FORCE_FILESYSTEM=1 -s ALLOW_MEMORY_GROWTH=1 -s ASSERTIONS=1 -s STANDALONE_WASM=0"
+        export LDFLAGS="-O2 -s WASM=1 -s FORCE_FILESYSTEM=1 -s ALLOW_MEMORY_GROWTH=1 -s EXPORTED_RUNTIME_METHODS=['FS','callMain'] -s ERROR_ON_UNDEFINED_SYMBOLS=0"
 
-    - name: Configure QEMU
-      run: |
+        # Verify emcc is available
+        which emcc || { echo "emcc not found"; exit 1; }
+        emcc --version || { echo "emcc not working"; exit 1; }
+        echo "PATH is: $PATH"
+
+        # Configure QEMU
         cd qemu-src
         ./configure \
           --target-list=i386-softmmu \
@@ -69,17 +70,19 @@ jobs:
           --disable-guest-agent \
           --disable-werror \
           --enable-debug \
-          --cross-prefix=emscripten- \
-          --host-cc="emcc" \
           --cc="emcc" \
           --cxx="em++" \
+          --host-cc="emcc" \
           --objcc="emcc" \
+          --ar="emar" \
+          --ranlib="emranlib" \
           --extra-cflags="$CFLAGS" \
-          --extra-ldflags="$LDFLAGS"
+          --extra-ldflags="$LDFLAGS" \
+          --disable-stack-protect \
+          --disable-sdl \
+          --disable-vnc
 
-    - name: Build QEMU
-      run: |
-        cd qemu-src
+        # Build QEMU
         make -j$(nproc)
 
     - name: Package artifacts
