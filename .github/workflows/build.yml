@@ -5,7 +5,7 @@ on: [push, pull_request]
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 90  # Extended timeout for complex build
+    timeout-minutes: 90
 
     steps:
     - name: Checkout repository
@@ -26,61 +26,66 @@ jobs:
           autoconf automake libtool \
           pkg-config gettext
 
-    - name: Clone QEMU with WASM patches
+    - name: Clone QEMU (minimal)
       run: |
-        git clone --depth 1 https://github.com/qemu/qemu.git qemu-src
+        git clone --depth 1 --branch v5.2.0 \
+          https://github.com/qemu/qemu.git qemu-src
         cd qemu-src
-        # Apply minimal WASM compatibility patches
-        curl -sL https://github.com/qemu/qemu/compare/master...wasm.patch | git apply -
         git submodule update --init --depth 1 dtc
 
-    - name: Configure build environment
+    - name: Configure environment
       run: |
         source $EMSDK/emsdk_env.sh
-        export CC="emcc"
-        export CXX="em++"
-        export AR="emar"
-        export RANLIB="emranlib"
-        export CFLAGS="-O2 -s WASM=1 -s ASYNCIFY -s ALLOW_MEMORY_GROWTH=1 -s FORCE_FILESYSTEM=1"
-        export LDFLAGS="$CFLAGS -s EXPORTED_RUNTIME_METHODS=['FS','callMain']"
+        export CC="emcc -s WASM=1"
+        export CXX="em++ -s WASM=1"
+        export AR=emar
+        export RANLIB=emranlib
+        export CFLAGS="-O2 -s ASYNCIFY -s ALLOW_MEMORY_GROWTH=1"
+        export LDFLAGS="-s WASM=1 -s FORCE_FILESYSTEM=1"
 
-    - name: Build minimal QEMU components
+    - name: Configure minimal QEMU
       run: |
         cd qemu-src
-        ./configure \
+        mkdir build && cd build
+        ../configure \
+          --target-list= \
           --disable-system \
           --disable-user \
           --disable-tools \
           --disable-docs \
           --disable-guest-agent \
           --disable-werror \
-          --target-list=x86_64-softmmu \
           --extra-cflags="$CFLAGS" \
           --extra-ldflags="$LDFLAGS"
-        
-        make -j2 qemu-system-x86_64
 
-    - name: Convert to WASM
+    - name: Build core components
       run: |
-        cd qemu-src
+        cd qemu-src/build
+        make -j2 qemu-common
+
+    - name: Create custom WASM build
+      run: |
+        cd qemu-src/build
         emcc -o qemu-wasm.js \
           *.o -lglib-2.0 -lpixman-1 \
           $LDFLAGS \
+          -s EXPORTED_RUNTIME_METHODS='["FS","callMain"]' \
           -s EXPORTED_FUNCTIONS='["_main"]' \
-          -s MODULARIZE=1
+          -s MODULARIZE=1 \
+          -s ALLOW_MEMORY_GROWTH=1
 
     - name: Package artifacts
       run: |
         mkdir -p artifacts
-        cp qemu-src/qemu-wasm.js artifacts/
-        cp qemu-src/qemu-wasm.wasm artifacts/
+        cp qemu-src/build/qemu-wasm.js artifacts/
+        cp qemu-src/build/qemu-wasm.wasm artifacts/
         echo '<!DOCTYPE html>
         <script src="qemu-wasm.js"></script>
         <script>
         Module = {
           onRuntimeInitialized: () => {
             FS.mkdir("/home");
-            FS.mount(MEMFS, {}, "/home");
+            FS.mount(IDBFS, {}, "/home");
             console.log("QEMU WASM ready");
           }
         };
