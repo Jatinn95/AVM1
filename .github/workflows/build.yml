@@ -16,7 +16,7 @@ jobs:
     - name: Set up Emscripten
       uses: mymindstorm/setup-emsdk@v13
       with:
-        version: 'latest'
+        version: '3.1.45'  # Using a known stable version
 
     - name: Install dependencies
       run: |
@@ -36,14 +36,24 @@ jobs:
 
     - name: Clone QEMU repository
       run: |
-        git clone https://github.com/qemu/qemu.git qemu-src
+        git clone --depth 1 --branch v8.0.4 https://github.com/qemu/qemu.git qemu-src
         cd qemu-src
         git submodule init
         git submodule update --recursive
 
-    - name: Configure and build QEMU for i386
+    - name: Configure environment
       run: |
         source $EMSDK/emsdk_env.sh
+        export AR=emar
+        export CC=emcc
+        export CXX=em++
+        export NM=emnm
+        export RANLIB=emranlib
+        export CFLAGS="-s WASM=1 -s FORCE_FILESYSTEM=1 -s ALLOW_MEMORY_GROWTH=1"
+        export LDFLAGS="-s WASM=1 -s FORCE_FILESYSTEM=1 -s ALLOW_MEMORY_GROWTH=1"
+
+    - name: Configure and build QEMU
+      run: |
         cd qemu-src
         mkdir build
         cd build
@@ -57,24 +67,18 @@ jobs:
           --disable-werror \
           --enable-debug \
           --cross-prefix=emscripten- \
-          --host-cc=emcc \
-          --cc=emcc \
-          --cxx=em++ \
-          --objcc=emcc \
-          --ar=emar \
-          --nm=emnm \
-          --as=emcc \
-          --ranlib=emranlib \
-          --ld=emcc \
-          --extra-cflags="-s WASM=1" \
-          --extra-ldflags="-s WASM=1 -s FORCE_FILESYSTEM=1 -s ALLOW_MEMORY_GROWTH=1"
+          --host-cc=emcc
         make -j$(nproc)
 
-    - name: Copy artifacts
+    - name: Rename and package artifacts
       run: |
         mkdir -p artifacts
         cp qemu-src/build/qemu-system-i386 artifacts/i386.js
         cp qemu-src/build/qemu-system-i386.wasm artifacts/i386.wasm
+        # Ensure the JS loader is properly named
+        if [ ! -f artifacts/i386.js ]; then
+          cp qemu-src/build/qemu-system-i386 artifacts/i386.js
+        fi
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
