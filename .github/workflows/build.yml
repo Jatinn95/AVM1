@@ -22,6 +22,7 @@ jobs:
 
     - name: Build i360.js and i360.wasm
       run: |
+        mkdir -p dist
         emcc src/i360.cpp -o dist/i360.js \
           -O3 \
           -s WASM=1 \
