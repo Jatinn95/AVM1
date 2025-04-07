@@ -5,7 +5,7 @@ on: [push, pull_request]
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 60  # Build may take longer than default timeout
+    timeout-minutes: 60
 
     steps:
     - name: Checkout repository
@@ -24,17 +24,15 @@ jobs:
           libglib2.0-dev libpixman-1-dev \
           ninja-build cmake meson \
           nettle-dev libgnutls28-dev \
-          libssl-dev libsdl2-dev \
           pkg-config gettext
 
-    - name: Clone QEMU (shallow clone with submodules)
+    - name: Clone QEMU (with limited submodules)
       run: |
-        git clone --depth 1 --branch v6.2.0 \
+        git clone --depth 1 --branch v7.2.0 \
           https://github.com/qemu/qemu.git qemu-src
         cd qemu-src
-        # Initialize only necessary submodules
         git submodule update --init --depth 1 \
-          dtc slirp ui/keycodemapdb
+          dtc ui/keycodemapdb
 
     - name: Configure environment
       run: |
@@ -46,12 +44,12 @@ jobs:
         export CFLAGS="-O2 -s WASM=1 -s ASYNCIFY -s ALLOW_MEMORY_GROWTH=1"
         export LDFLAGS="$CFLAGS -s EXPORTED_RUNTIME_METHODS=['FS','callMain']"
 
-    - name: Configure QEMU
+    - name: Configure QEMU for i386 (supported target)
       run: |
         cd qemu-src
         mkdir build && cd build
         ../configure \
-          --target-list=arm-softmmu \
+          --target-list=i386-softmmu \
           --disable-docs \
           --disable-system \
           --disable-user \
@@ -59,41 +57,41 @@ jobs:
           --disable-guest-agent \
           --disable-werror \
           --enable-debug \
-          --audio-drv-list= \
           --disable-opengl \
           --disable-virglrenderer \
           --disable-gtk \
           --disable-sdl \
-          --disable-vnc
+          --disable-vnc \
+          --disable-slirp
 
     - name: Build QEMU
       run: |
         cd qemu-src/build
-        make -j$(($(nproc)/2))  # Use half the cores for stability
+        make -j$(($(nproc)/2))
 
     - name: Post-process for WASM
       run: |
         cd qemu-src/build
-        emcc -o qemu-system-arm.js \
-          *.o -lglib-2.0 -lpixman-1 -lnettle -lgnutls \
+        emcc -o qemu-system-i386.js \
+          *.o -lglib-2.0 -lpixman-1 -lnettle \
           $LDFLAGS \
           -s EXPORTED_FUNCTIONS='["_main"]'
 
     - name: Package artifacts
       run: |
         mkdir -p artifacts
-        cp qemu-src/build/qemu-system-arm.js artifacts/android-vm.js
-        cp qemu-src/build/qemu-system-arm.wasm artifacts/android-vm.wasm
+        cp qemu-src/build/qemu-system-i386.js artifacts/vm.js
+        cp qemu-src/build/qemu-system-i386.wasm artifacts/vm.wasm
         echo '<!DOCTYPE html>
-        <script src="android-vm.js"></script>
+        <script src="vm.js"></script>
         <script>
         Module = {
-          onRuntimeInitialized: () => console.log("Android VM ready")
+          onRuntimeInitialized: () => console.log("VM ready")
         };
         </script>' > artifacts/loader.html
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: android-qemu-vm
+        name: qemu-wasm-vm
         path: artifacts/
