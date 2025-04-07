@@ -69,9 +69,7 @@ jobs:
           --cxx="em++" \
           --objcc="emcc" \
           --extra-cflags="$CFLAGS" \
-          --extra-ldflags="$LDFLAGS" \
-          --cpu=wasm32 \
-          --host-cpu=wasm32
+          --extra-ldflags="$LDFLAGS"
 
     - name: Build QEMU
       run: |
@@ -82,7 +80,6 @@ jobs:
       run: |
         mkdir -p artifacts
         cp qemu-src/build/qemu-system-i386* artifacts/
-        # Rename outputs to expected names
         mv artifacts/qemu-system-i386 artifacts/i386.js
         mv artifacts/qemu-system-i386.wasm artifacts/i386.wasm
 
