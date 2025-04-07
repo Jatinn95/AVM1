@@ -1,11 +1,11 @@
-name: Minimal QEMU WASM for Android
+name: QEMU WASM for Android
 
 on: [push, pull_request]
 
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 60
+    timeout-minutes: 30
 
     steps:
     - name: Checkout repository
@@ -16,63 +16,15 @@ jobs:
       with:
         version: '3.1.45'
 
-    - name: Install minimal dependencies
+    - name: Download prebuilt QEMU WASM
       run: |
-        sudo apt-get update
-        sudo apt-get install -y \
-          build-essential git python3 \
-          libglib2.0-dev libpixman-1-dev \
-          pkg-config
+        mkdir -p qemu-wasm
+        cd qemu-wasm
+        wget https://github.com/webvmio/qemu-wasm/releases/download/v1.0/qemu-wasm-android.zip
+        unzip qemu-wasm-android.zip
 
-    - name: Clone QEMU (no submodules)
+    - name: Prepare Android loader
       run: |
-        git clone --depth 1 --no-recurse-submodules \
-          https://github.com/qemu/qemu.git qemu-src
-
-    - name: Configure environment
-      run: |
-        source $EMSDK/emsdk_env.sh
-        export CC="emcc"
-        export CXX="em++"
-        export AR="emar"
-        export RANLIB="emranlib"
-        export CFLAGS="-O1 -s WASM=1 -s ASYNCIFY -s ALLOW_MEMORY_GROWTH=1"
-        export LDFLAGS="$CFLAGS -s FORCE_FILESYSTEM=1"
-
-    - name: Build core components only
-      run: |
-        cd qemu-src
-        mkdir build && cd build
-        
-        # Minimal configuration
-        ../configure \
-          --disable-system \
-          --disable-user \
-          --disable-tools \
-          --disable-docs \
-          --disable-guest-agent \
-          --disable-werror \
-          --target-list=
-        
-        # Build only absolutely essential components
-        make -j1 qemu-img.o util/coroutine.o util/qemu-coroutine.o osdep/
-
-    - name: Create WASM bundle
-      run: |
-        cd qemu-src/build
-        emcc -o qemu-wasm.js \
-          qemu-img.o util/coroutine.o util/qemu-coroutine.o \
-          osdep/*.o \
-          -lglib-2.0 -lpixman-1 \
-          $LDFLAGS \
-          -s EXPORTED_FUNCTIONS='["_main"]' \
-          -s MODULARIZE=1
-
-    - name: Package artifacts
-      run: |
-        mkdir -p artifacts
-        cp qemu-src/build/qemu-wasm.js artifacts/
-        cp qemu-src/build/qemu-wasm.wasm artifacts/
         echo '<!DOCTYPE html>
         <script src="qemu-wasm.js"></script>
         <script>
@@ -80,13 +32,13 @@ jobs:
           onRuntimeInitialized: () => {
             FS.mkdir("/home");
             FS.mount(IDBFS, {}, "/home");
-            console.log("Minimal QEMU WASM ready");
+            console.log("QEMU WASM ready");
           }
         };
-        </script>' > artifacts/loader.html
+        </script>' > qemu-wasm/loader.html
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
         name: qemu-wasm-android
-        path: artifacts/
+        path: qemu-wasm/
