@@ -5,7 +5,7 @@ on: [push, pull_request]
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 60
+    timeout-minutes: 90  # Extended timeout for complex build
 
     steps:
     - name: Checkout repository
@@ -23,73 +23,71 @@ jobs:
           build-essential git python3 \
           libglib2.0-dev libpixman-1-dev \
           ninja-build cmake meson \
-          nettle-dev libgnutls28-dev \
+          autoconf automake libtool \
           pkg-config gettext
 
-    - name: Clone QEMU (with minimal submodules)
+    - name: Clone QEMU with WASM patches
       run: |
-        git clone --depth 1 --branch v5.2.0 \
-          https://github.com/qemu/qemu.git qemu-src
+        git clone --depth 1 https://github.com/qemu/qemu.git qemu-src
         cd qemu-src
-        git submodule update --init --depth 1 \
-          dtc ui/keycodemapdb
+        # Apply minimal WASM compatibility patches
+        curl -sL https://github.com/qemu/qemu/compare/master...wasm.patch | git apply -
+        git submodule update --init --depth 1 dtc
 
-    - name: Configure environment
+    - name: Configure build environment
       run: |
         source $EMSDK/emsdk_env.sh
         export CC="emcc"
         export CXX="em++"
         export AR="emar"
         export RANLIB="emranlib"
-        export CFLAGS="-O2 -s WASM=1 -s ASYNCIFY -s ALLOW_MEMORY_GROWTH=1"
+        export CFLAGS="-O2 -s WASM=1 -s ASYNCIFY -s ALLOW_MEMORY_GROWTH=1 -s FORCE_FILESYSTEM=1"
         export LDFLAGS="$CFLAGS -s EXPORTED_RUNTIME_METHODS=['FS','callMain']"
 
-    - name: Configure with minimal target
+    - name: Build minimal QEMU components
       run: |
         cd qemu-src
-        mkdir build && cd build
-        ../configure \
-          --target-list=wasm32-softmmu \
-          --disable-docs \
+        ./configure \
           --disable-system \
           --disable-user \
           --disable-tools \
+          --disable-docs \
           --disable-guest-agent \
           --disable-werror \
-          --enable-debug \
-          --disable-opengl \
-          --disable-virglrenderer \
-          --cpu=wasm32 \
-          --host-cpu=wasm32
+          --target-list=x86_64-softmmu \
+          --extra-cflags="$CFLAGS" \
+          --extra-ldflags="$LDFLAGS"
+        
+        make -j2 qemu-system-x86_64
 
-    - name: Build QEMU
+    - name: Convert to WASM
       run: |
-        cd qemu-src/build
-        make -j2  # Reduced parallelism for stability
-
-    - name: Post-process for WASM
-      run: |
-        cd qemu-src/build
+        cd qemu-src
         emcc -o qemu-wasm.js \
-          *.o -lglib-2.0 -lpixman-1 -lnettle \
+          *.o -lglib-2.0 -lpixman-1 \
           $LDFLAGS \
-          -s EXPORTED_FUNCTIONS='["_main"]'
+          -s EXPORTED_FUNCTIONS='["_main"]' \
+          -s MODULARIZE=1
 
     - name: Package artifacts
       run: |
         mkdir -p artifacts
-        cp qemu-src/build/qemu-wasm.js artifacts/
-        cp qemu-src/build/qemu-wasm.wasm artifacts/
+        cp qemu-src/qemu-wasm.js artifacts/
+        cp qemu-src/qemu-wasm.wasm artifacts/
         echo '<!DOCTYPE html>
         <script src="qemu-wasm.js"></script>
         <script>
         Module = {
-          onRuntimeInitialized: () => console.log("QEMU WASM ready")
+          onRuntimeInitialized: () => {
+            FS.mkdir("/home");
+            FS.mount(MEMFS, {}, "/home");
+            console.log("QEMU WASM ready");
+          }
         };
         </script>' > artifacts/loader.html
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: qemu-wasm-vm
+        name: qemu-wasm-android
         path: artifacts/
