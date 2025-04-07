@@ -1,15 +1,17 @@
-name: Build Android-Compatible QEMU WASM
+name: Build QEMU for Android WASM
 
 on: [push, pull_request]
 
 jobs:
   build:
     runs-on: ubuntu-22.04
+    timeout-minutes: 60  # Build may take longer than default timeout
+
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Set up Emscripten
+    - name: Setup Emscripten
       uses: mymindstorm/setup-emsdk@v13
       with:
         version: '3.1.45'
@@ -20,20 +22,21 @@ jobs:
         sudo apt-get install -y \
           build-essential git python3 \
           libglib2.0-dev libpixman-1-dev \
-          ninja-build cmake \
+          ninja-build cmake meson \
           nettle-dev libgnutls28-dev \
           libssl-dev libsdl2-dev \
-          meson pkg-config
+          pkg-config gettext
 
-    - name: Clone QEMU (v6.0.0 with better Ubuntu 22.04 compatibility)
+    - name: Clone QEMU (shallow clone with submodules)
       run: |
-        git clone --depth 1 --branch v6.0.0 https://github.com/qemu/qemu.git qemu-src
+        git clone --depth 1 --branch v6.2.0 \
+          https://github.com/qemu/qemu.git qemu-src
         cd qemu-src
-        git submodule update --init --recursive
-        # Apply workaround patches
-        curl -sL https://gitlab.com/qemu-project/qemu/-/commit/123456789.patch | git apply -
+        # Initialize only necessary submodules
+        git submodule update --init --depth 1 \
+          dtc slirp ui/keycodemapdb
 
-    - name: Configure build environment
+    - name: Configure environment
       run: |
         source $EMSDK/emsdk_env.sh
         export CC="emcc"
@@ -41,7 +44,7 @@ jobs:
         export AR="emar"
         export RANLIB="emranlib"
         export CFLAGS="-O2 -s WASM=1 -s ASYNCIFY -s ALLOW_MEMORY_GROWTH=1"
-        export LDFLAGS="-O2 -s WASM=1 -s ASYNCIFY -s ALLOW_MEMORY_GROWTH=1"
+        export LDFLAGS="$CFLAGS -s EXPORTED_RUNTIME_METHODS=['FS','callMain']"
 
     - name: Configure QEMU
       run: |
@@ -49,27 +52,31 @@ jobs:
         mkdir build && cd build
         ../configure \
           --target-list=arm-softmmu \
+          --disable-docs \
           --disable-system \
           --disable-user \
           --disable-tools \
+          --disable-guest-agent \
+          --disable-werror \
           --enable-debug \
-          --enable-slirp=internal \
+          --audio-drv-list= \
           --disable-opengl \
           --disable-virglrenderer \
-          --audio-drv-list=
+          --disable-gtk \
+          --disable-sdl \
+          --disable-vnc
 
     - name: Build QEMU
       run: |
         cd qemu-src/build
-        make -j$(nproc)
+        make -j$(($(nproc)/2))  # Use half the cores for stability
 
     - name: Post-process for WASM
       run: |
         cd qemu-src/build
         emcc -o qemu-system-arm.js \
           *.o -lglib-2.0 -lpixman-1 -lnettle -lgnutls \
-          -s WASM=1 -s ASYNCIFY -s ALLOW_MEMORY_GROWTH=1 \
-          -s EXPORTED_RUNTIME_METHODS='["ccall","cwrap"]' \
+          $LDFLAGS \
           -s EXPORTED_FUNCTIONS='["_main"]'
 
     - name: Package artifacts
@@ -77,16 +84,13 @@ jobs:
         mkdir -p artifacts
         cp qemu-src/build/qemu-system-arm.js artifacts/android-vm.js
         cp qemu-src/build/qemu-system-arm.wasm artifacts/android-vm.wasm
-        # Create minimal HTML loader
         echo '<!DOCTYPE html>
+        <script src="android-vm.js"></script>
         <script>
         Module = {
-          onRuntimeInitialized: function() {
-            console.log("Android VM ready");
-          }
+          onRuntimeInitialized: () => console.log("Android VM ready")
         };
-        </script>
-        <script src="android-vm.js"></script>' > artifacts/loader.html
+        </script>' > artifacts/loader.html
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
