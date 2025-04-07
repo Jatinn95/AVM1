@@ -27,14 +27,13 @@ jobs:
         cd emsdk
         ./emsdk install latest
         ./emsdk activate latest
-        echo "source $(pwd)/emsdk_env.sh" >> $GITHUB_ENV
 
     - name: Build .wasm and .js
       run: |
         source emsdk/emsdk_env.sh
         mkdir -p build
         cd build
-        # Replace with your actual source and flags
+        # Replace this with your actual source and build logic
         emcc ../src/main.c -O2 -s WASM=1 -s EXPORTED_FUNCTIONS='["_main"]' -o android-vm.js
 
     - name: Upload artifacts
