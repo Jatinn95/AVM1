@@ -1,11 +1,11 @@
-name: Build QEMU WASM for Android
+name: Minimal QEMU WASM for Android
 
 on: [push, pull_request]
 
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 120  # Extended timeout for complex build
+    timeout-minutes: 90
 
     steps:
     - name: Checkout repository
@@ -22,29 +22,28 @@ jobs:
         sudo apt-get install -y \
           build-essential git python3 \
           libglib2.0-dev libpixman-1-dev \
-          ninja-build cmake meson \
-          autoconf automake libtool \
-          pkg-config gettext
+          ninja-build cmake \
+          pkg-config
 
-    - name: Clone QEMU with minimal submodules
+    - name: Clone minimal QEMU
       run: |
-        git clone --depth 1 --branch v6.2.0 \
+        git clone --depth 1 --branch v5.2.0 \
+          --single-branch --no-tags \
           https://github.com/qemu/qemu.git qemu-src
         cd qemu-src
-        git submodule update --init --depth 1 \
-          dtc ui/keycodemapdb
+        git submodule update --init --depth 1 dtc
 
-    - name: Configure environment
+    - name: Configure minimal environment
       run: |
         source $EMSDK/emsdk_env.sh
         export CC="emcc"
         export CXX="em++"
         export AR="emar"
         export RANLIB="emranlib"
-        export CFLAGS="-O2 -s WASM=1 -s ASYNCIFY -s ALLOW_MEMORY_GROWTH=1 -s FORCE_FILESYSTEM=1"
-        export LDFLAGS="$CFLAGS -s EXPORTED_RUNTIME_METHODS=['FS','callMain']"
+        export CFLAGS="-O2 -s WASM=1 -s ASYNCIFY -s ALLOW_MEMORY_GROWTH=1"
+        export LDFLAGS="$CFLAGS -s FORCE_FILESYSTEM=1"
 
-    - name: Configure minimal QEMU
+    - name: Build minimal components
       run: |
         cd qemu-src
         mkdir build && cd build
@@ -56,24 +55,20 @@ jobs:
           --disable-guest-agent \
           --disable-werror \
           --target-list= \
-          --extra-cflags="$CFLAGS" \
-          --extra-ldflags="$LDFLAGS"
+          --without-default-features
+        
+        # Build only essential components
+        make -j2 qemu-img.o util/ osdep/ qom/ hw/core/
 
-    - name: Build core libraries
-      run: |
-        cd qemu-src/build
-        make -j2 libqemuutil.a libqemustub.a
-
-    - name: Create custom WASM build
+    - name: Create WASM bundle
       run: |
         cd qemu-src/build
         emcc -o qemu-wasm.js \
-          libqemuutil.a libqemustub.a \
+          qemu-img.o util/*.o osdep/*.o qom/*.o hw/core/*.o \
           -lglib-2.0 -lpixman-1 \
           $LDFLAGS \
           -s EXPORTED_FUNCTIONS='["_main"]' \
-          -s MODULARIZE=1 \
-          -s ASYNCIFY
+          -s MODULARIZE=1
 
     - name: Package artifacts
       run: |
