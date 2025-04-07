@@ -41,9 +41,12 @@ jobs:
         git submodule init
         git submodule update --recursive
 
-    - name: Configure environment
+    - name: Build QEMU with Emscripten
       run: |
+        # Activate Emscripten environment
         source $EMSDK/emsdk_env.sh
+        
+        # Set environment variables
         export CC=emcc
         export CXX=em++
         export AR=emar
@@ -51,8 +54,11 @@ jobs:
         export CFLAGS="-O2 -s WASM=1 -s FORCE_FILESYSTEM=1 -s ALLOW_MEMORY_GROWTH=1 -s ASSERTIONS=1"
         export LDFLAGS="-O2 -s WASM=1 -s FORCE_FILESYSTEM=1 -s ALLOW_MEMORY_GROWTH=1 -s EXPORTED_RUNTIME_METHODS=['FS','callMain']"
 
-    - name: Configure QEMU
-      run: |
+        # Verify emcc is available
+        which emcc || { echo "emcc not found"; exit 1; }
+        emcc --version || { echo "emcc not working"; exit 1; }
+
+        # Configure QEMU
         cd qemu-src
         ./configure \
           --target-list=i386-softmmu \
@@ -71,9 +77,7 @@ jobs:
           --extra-cflags="$CFLAGS" \
           --extra-ldflags="$LDFLAGS"
 
-    - name: Build QEMU
-      run: |
-        cd qemu-src
+        # Build QEMU
         make -j$(nproc)
 
     - name: Package artifacts
