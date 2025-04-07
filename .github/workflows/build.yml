@@ -5,7 +5,7 @@ on: [push, pull_request]
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 90
+    timeout-minutes: 60
 
     steps:
     - name: Checkout repository
@@ -16,34 +16,35 @@ jobs:
       with:
         version: '3.1.45'
 
-    - name: Install dependencies
+    - name: Install minimal dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y \
           build-essential git python3 \
           libglib2.0-dev libpixman-1-dev \
-          ninja-build cmake \
           pkg-config
 
-    - name: Clone minimal QEMU
+    - name: Clone QEMU (no submodules)
       run: |
-        git clone --depth 1 --branch v5.2.0 \
-          --single-branch --no-tags \
+        git clone --depth 1 --no-recurse-submodules \
           https://github.com/qemu/qemu.git qemu-src
-        cd qemu-src
-        git submodule update --init --depth 1 dtc
 
-    - name: Configure minimal environment
+    - name: Configure environment
       run: |
         source $EMSDK/emsdk_env.sh
         export CC="emcc"
         export CXX="em++"
         export AR="emar"
         export RANLIB="emranlib"
-        export CFLAGS="-O2 -s WASM=1 -s ASYNCIFY -s ALLOW_MEMORY_GROWTH=1"
+        export CFLAGS="-O1 -s WASM=1 -s ASYNCIFY -s ALLOW_MEMORY_GROWTH=1"
         export LDFLAGS="$CFLAGS -s FORCE_FILESYSTEM=1"
+
+    - name: Build core components only
+      run: |
         cd qemu-src
         mkdir build && cd build
+        
+        # Minimal configuration
         ../configure \
           --disable-system \
           --disable-user \
@@ -52,17 +53,16 @@ jobs:
           --disable-guest-agent \
           --disable-werror \
           --target-list=
-
-    - name: Build minimal components
-      run: |
-        cd qemu-src/build
-        make -j2 qemu-img.o util/ osdep/ qom/ hw/core/
+        
+        # Build only absolutely essential components
+        make -j1 qemu-img.o util/coroutine.o util/qemu-coroutine.o osdep/
 
     - name: Create WASM bundle
       run: |
         cd qemu-src/build
         emcc -o qemu-wasm.js \
-          qemu-img.o util/*.o osdep/*.o qom/*.o hw/core/*.o \
+          qemu-img.o util/coroutine.o util/qemu-coroutine.o \
+          osdep/*.o \
           -lglib-2.0 -lpixman-1 \
           $LDFLAGS \
           -s EXPORTED_FUNCTIONS='["_main"]' \
@@ -80,7 +80,7 @@ jobs:
           onRuntimeInitialized: () => {
             FS.mkdir("/home");
             FS.mount(IDBFS, {}, "/home");
-            console.log("QEMU WASM ready");
+            console.log("Minimal QEMU WASM ready");
           }
         };
         </script>' > artifacts/loader.html
