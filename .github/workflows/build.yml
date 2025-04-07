@@ -28,8 +28,16 @@ jobs:
           cmake \
           emscripten
 
+    - name: Clone QEMU repository
+      run: |
+        git clone https://git.qemu.org/git/qemu.git qemu-src
+        cd qemu-src
+        git submodule init
+        git submodule update --recursive
+
     - name: Configure and build QEMU for i386
       run: |
+        cd qemu-src
         mkdir build
         cd build
         emconfigure ../configure \
@@ -46,8 +54,8 @@ jobs:
     - name: Copy artifacts
       run: |
         mkdir -p artifacts
-        cp build/qemu-system-i386.js artifacts/i386.js
-        cp build/qemu-system-i386.wasm artifacts/i386.wasm
+        cp qemu-src/build/qemu-system-i386.js artifacts/i386.js
+        cp qemu-src/build/qemu-system-i386.wasm artifacts/i386.wasm
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
