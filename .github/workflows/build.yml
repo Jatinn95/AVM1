@@ -36,7 +36,7 @@ jobs:
         cd v86
         make all
         mkdir -p ../dist
-        cp v86.js v86.wasm ../dist/i360.js
+        cp v86.js ../dist/i360.js
         cp v86.wasm ../dist/i360.wasm
 
     - name: Upload artifacts
