@@ -50,7 +50,7 @@ jobs:
         cp build/qemu-system-i386.wasm artifacts/i386.wasm
 
     - name: Upload artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: qemu-i386-build
         path: artifacts/
