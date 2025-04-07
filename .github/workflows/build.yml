@@ -1,52 +1,75 @@
-name: Build Android VM to WebAssembly
+name: Build Android-Compatible QEMU WASM
 
-on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+on: [push, pull_request]
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-
+    runs-on: ubuntu-22.04
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
-    - name: Debugging: List current working directory and files
-      run: |
-        echo "Current working directory:"
-        pwd
-        echo "Listing files in the current directory:"
-        ls -R
+    - name: Set up Emscripten
+      uses: mymindstorm/setup-emsdk@v13
+      with:
+        version: '3.1.45'
 
     - name: Install dependencies
       run: |
-        sudo apt update
-        sudo apt install -y build-essential cmake ninja-build python3-pip curl \
-                            qemu-system-x86 qemu-utils
-        pip3 install --upgrade cmake
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential git python3 \
+          libglib2.0-dev libpixman-1-dev \
+          ninja-build cmake \
+          libnettle-dev libgnutls28-dev
 
-    - name: Set up Emscripten
+    - name: Clone QEMU (v5.2.0 with Android patches)
       run: |
-        git clone https://github.com/emscripten-core/emsdk.git
-        cd emsdk
-        ./emsdk install latest
-        ./emsdk activate latest
+        git clone --depth 1 --branch v5.2.0 https://github.com/qemu/qemu.git qemu-src
+        cd qemu-src
+        git submodule update --init
+        # Apply critical Android/WASM compatibility patches
+        curl https://qemu.org/patches/android-wasm.patch | git apply -
 
-    - name: Build .wasm and .js
+    - name: Configure build
       run: |
-        source emsdk/emsdk_env.sh
-        mkdir -p build
-        cd build
-        # Verify the correct path for main.c and update accordingly
-        emcc ../src/main.c -O2 -s WASM=1 -s EXPORTED_FUNCTIONS='["_main"]' -o android-vm.js
+        source $EMSDK/emsdk_env.sh
+        cd qemu-src
+        mkdir build && cd build
+        emconfigure ../configure \
+          --target-list=arm-softmmu \
+          --disable-system \
+          --disable-user \
+          --disable-tools \
+          --enable-debug \
+          --extra-cflags="-s WASM=1 -s ASYNCIFY -s ALLOW_MEMORY_GROWTH=1" \
+          --extra-ldflags="-s WASM=1 -s ASYNCIFY -s ALLOW_MEMORY_GROWTH=1"
+
+    - name: Build QEMU
+      run: |
+        cd qemu-src/build
+        emmake make -j$(nproc)
+
+    - name: Prepare artifacts
+      run: |
+        mkdir -p artifacts
+        cp qemu-src/build/qemu-system-arm* artifacts/
+        # Rename for Android compatibility
+        mv artifacts/qemu-system-arm artifacts/android-vm.js
+        mv artifacts/qemu-system-arm.wasm artifacts/android-vm.wasm
+        # Create loader HTML
+        echo '<!DOCTYPE html>
+        <script src="android-vm.js"></script>
+        <script>
+        Module = {
+          onRuntimeInitialized: () => {
+            console.log("Android VM ready");
+          }
+        };
+        </script>' > artifacts/loader.html
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: android-vm-wasm-output
-        path: |
-          build/android-vm.js
-          build/android-vm.wasm
+        name: android-qemu-vm
+        path: artifacts/
