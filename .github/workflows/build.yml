@@ -9,12 +9,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
-
-    - name: Download sample APK
+    - name: Download test APK
       run: |
-        wget https://github.com/appetize-io/example-apps/raw/master/android/app.apk
+        wget https://github.com/andreas1327250/Android-Cheat-Sheet/raw/master/app-debug.apk -O app.apk
 
     - name: Upload to Appetize.io
       run: |
