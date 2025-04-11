@@ -1,44 +1,6 @@
-name: QEMU WASM for Android
-
-on: [push, pull_request]
-
-jobs:
-  build:
-    runs-on: ubuntu-22.04
-    timeout-minutes: 30
-
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-
-    - name: Setup Emscripten
-      uses: mymindstorm/setup-emsdk@v13
-      with:
-        version: '3.1.45'
-
-    - name: Download prebuilt QEMU WASM
-      run: |
-        mkdir -p qemu-wasm
-        cd qemu-wasm
-        wget https://github.com/webvmio/qemu-wasm/releases/download/v1.0/qemu-wasm-android.zip
-        unzip qemu-wasm-android.zip
-
-    - name: Prepare Android loader
-      run: |
-        echo '<!DOCTYPE html>
-        <script src="qemu-wasm.js"></script>
-        <script>
-        Module = {
-          onRuntimeInitialized: () => {
-            FS.mkdir("/home");
-            FS.mount(IDBFS, {}, "/home");
-            console.log("QEMU WASM ready");
-          }
-        };
-        </script>' > qemu-wasm/loader.html
-
-    - name: Upload artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: qemu-wasm-android
-        path: qemu-wasm/
+- name: Upload app to Appetize.io
+  run: |
+    curl -H "Authorization: Bearer ${{ secrets.'tok_o3laoux75kpoudqemidnbxfvpq'; }}" \
+         -F "file=@your-app.apk" \
+         -F "platform=android" \
+         https://api.appetize.io/v1/apps
