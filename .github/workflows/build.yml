@@ -11,7 +11,7 @@ jobs:
     steps:
     - name: Download test APK
       run: |
-        wget https://github.com/lineageos4microg/Signal-Android/raw/lineage-21/app/build/outputs/apk/release/app-universal-release-unsigned.apk -O app.apk
+        wget https://f-droid.org/repo/org.fdroid.fdroid_1010000.apk -O app.apk
 
     - name: Upload to Appetize.io
       run: |
