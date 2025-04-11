@@ -1,4 +1,4 @@
-name: Upload to Appetize.io (Demo)
+name: Upload to Appetize.io (Demo - From Repo)
 
 on:
   push:
@@ -9,13 +9,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Download test APK
-      run: |
-        wget https://archive.org/download/github.com-delaroy-AndroidLoginAndRegistrationSystem_-_2019-12-15_07-20-23/app-debug.apk -O app.apk
+    - name: Checkout repo
+      uses: actions/checkout@v3
 
     - name: Upload to Appetize.io
       run: |
         curl -H "Authorization: Bearer tok_o3laoux75kpoudqemidnbxfvpq" \
-             -F "file=@app.apk" \
+             -F "file=@apk/app.apk" \
              -F "platform=android" \
              https://api.appetize.io/v1/apps
