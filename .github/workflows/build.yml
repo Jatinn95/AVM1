@@ -11,7 +11,7 @@ jobs:
     steps:
     - name: Download test APK
       run: |
-        wget https://github.com/andreas1327250/Android-Cheat-Sheet/raw/master/app-debug.apk -O app.apk
+        wget https://github.com/lineageos4microg/Signal-Android/raw/lineage-21/app/build/outputs/apk/release/app-universal-release-unsigned.apk -O app.apk
 
     - name: Upload to Appetize.io
       run: |
