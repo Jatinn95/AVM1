@@ -1,4 +1,4 @@
-name: Upload to Appetize.io
+name: Upload to Appetize.io (Demo)
 
 on:
   push:
@@ -12,9 +12,13 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v3
 
-    - name: Upload APK to Appetize.io
+    - name: Download sample APK
       run: |
-        curl -H "Authorization: Bearer ${{ secrets.tok_o3laoux75kpoudqemidnbxfvpq }}" \
+        wget https://github.com/appetize-io/example-apps/raw/master/android/app.apk
+
+    - name: Upload to Appetize.io
+      run: |
+        curl -H "Authorization: Bearer tok_o3laoux75kpoudqemidnbxfvpq" \
              -F "file=@app.apk" \
              -F "platform=android" \
              https://api.appetize.io/v1/apps
