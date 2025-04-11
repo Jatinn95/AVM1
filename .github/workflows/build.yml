@@ -1,6 +1,20 @@
-- name: Upload app to Appetize.io
-  run: |
-    curl -H "Authorization: Bearer ${{ secrets.'tok_o3laoux75kpoudqemidnbxfvpq'; }}" \
-         -F "file=@your-app.apk" \
-         -F "platform=android" \
-         https://api.appetize.io/v1/apps
+name: Upload to Appetize.io
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Upload APK to Appetize.io
+      run: |
+        curl -H "Authorization: Bearer ${{ secrets.'tok_o3laoux75kpoudqemidnbxfvpq'; }}" \
+             -F "file=@app.apk" \
+             -F "platform=android" \
+             https://api.appetize.io/v1/apps
