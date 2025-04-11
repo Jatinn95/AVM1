@@ -11,7 +11,7 @@ jobs:
     steps:
     - name: Download test APK
       run: |
-        wget https://f-droid.org/repo/org.fdroid.fdroid_1010000.apk -O app.apk
+        wget https://github.com/kevinresol/sample-apk/raw/master/app-debug.apk -O app.apk
 
     - name: Upload to Appetize.io
       run: |
